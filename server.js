@@ -3,30 +3,36 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { URL } = require('url');
+const { MongoClient } = require('mongodb');
 
 const PORT = process.env.PORT || 3000;
-const DATA_DIR = process.env.DATA_DIR || __dirname; // 云平台可挂持久卷后设置 DATA_DIR
-const DATA_FILE = path.join(DATA_DIR, 'data.json');
+const MONGO_URI = process.env.MONGO_URI;
+
+if (!MONGO_URI) {
+  console.error('❌ 缺少环境变量 MONGO_URI，应用无法启动。请在环境变量中设置 MongoDB 连接字符串。');
+  process.exit(1);
+}
+
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
-// ---------------- storage ----------------
-let db = { users: [], clients: [], projects: [], logins: [] };
+// ---------------- mongo ----------------
+let client, db, usersCol, clientsCol, projectsCol, loginsCol;
 
-function loadDB() {
-  if (fs.existsSync(DATA_FILE)) {
-    try {
-      const parsed = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-      db.users = parsed.users || [];
-      db.clients = parsed.clients || [];
-      db.projects = parsed.projects || [];
-      db.logins = parsed.logins || [];
-    } catch (e) {
-      console.error('⚠️ 数据文件损坏，已尝试加载空数据:', e.message);
-    }
-  }
-  if (db.users.length === 0) {
+async function connectDB() {
+  client = new MongoClient(MONGO_URI, { serverSelectionTimeoutMS: 15000 });
+  await client.connect();
+  db = client.db('overseas_tracker');
+  usersCol = db.collection('users');
+  clientsCol = db.collection('clients');
+  projectsCol = db.collection('projects');
+  loginsCol = db.collection('logins');
+  await usersCol.createIndex({ username: 1 }, { unique: true }).catch(() => {});
+
+  // 初始管理员
+  const existing = await usersCol.findOne({ username: 'admin' });
+  if (!existing) {
     const { salt, hash } = hashPassword('admin123');
-    db.users.push({
+    await usersCol.insertOne({
       id: genId('u'),
       username: 'admin',
       passwordHash: hash,
@@ -34,17 +40,12 @@ function loadDB() {
       role: 'admin',
       createdAt: new Date().toISOString()
     });
-    saveDB();
     console.log('============================================================');
     console.log('  初始管理员已创建');
     console.log('  用户名: admin    密码: admin123');
     console.log('  请登录后尽快在「管理员面板」修改密码！');
     console.log('============================================================');
   }
-}
-
-function saveDB() {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
 }
 
 // ---------------- password & token ----------------
@@ -69,23 +70,25 @@ function createSession(userId) {
   sessions.set(token, { userId, createdAt: Date.now() });
   return token;
 }
-function getUserByToken(token) {
+async function getUserByToken(token) {
   if (!token) return null;
   const s = sessions.get(token);
   if (!s) return null;
-  return db.users.find(u => u.id === s.userId) || null;
+  return await usersCol.findOne({ id: s.userId });
 }
 
 // ---------------- helpers ----------------
 function publicUser(u) {
   return { id: u.id, username: u.username, role: u.role, createdAt: u.createdAt };
 }
-function usernameById(id) {
-  const u = db.users.find(x => x.id === id);
-  return u ? u.username : '(未知)';
+async function allUsersMap() {
+  const users = await usersCol.find({}, { projection: { id: 1, username: 1 } }).toArray();
+  const map = {};
+  for (const u of users) map[u.id] = u.username;
+  return map;
 }
-function attachOwner(rec) {
-  return Object.assign({}, rec, { ownerName: usernameById(rec.ownerId) });
+function attachOwner(rec, userMap) {
+  return Object.assign({}, rec, { ownerName: userMap[rec.ownerId] || '(未知)' });
 }
 function cleanStr(v) {
   return typeof v === 'string' ? v.trim() : (v == null ? '' : String(v));
@@ -108,17 +111,28 @@ function makeRecord(type, body, user) {
   const base = { id: genId(type), ownerId: user.id, createdAt: now, updatedAt: now };
   return Object.assign(base, type === 'clients' ? sanitizeClient(body) : sanitizeProject(body));
 }
-function overview() {
+async function overview() {
+  const users = await usersCol.find({}).toArray();
+  const clients = await clientsCol.find({}).toArray();
+  const projects = await projectsCol.find({}).toArray();
   const perUser = {};
-  for (const u of db.users) perUser[u.id] = { username: u.username, role: u.role, clients: 0, projects: 0 };
-  for (const c of db.clients) if (perUser[c.ownerId]) perUser[c.ownerId].clients++;
-  for (const p of db.projects) if (perUser[p.ownerId]) perUser[p.ownerId].projects++;
-  const recentLogins = db.logins.slice(-15).reverse().map(l => ({ username: l.username, at: l.at }));
+  for (const u of users) perUser[u.id] = { username: u.username, role: u.role, clients: 0, projects: 0 };
+  for (const c of clients) if (perUser[c.ownerId]) perUser[c.ownerId].clients++;
+  for (const p of projects) if (perUser[p.ownerId]) perUser[p.ownerId].projects++;
+  const recentLogins = (await loginsCol.find({}).sort({ at: -1 }).limit(15).toArray()).map(l => ({ username: l.username, at: l.at }));
   return {
-    totals: { users: db.users.length, clients: db.clients.length, projects: db.projects.length },
+    totals: { users: users.length, clients: clients.length, projects: projects.length },
     perUser: Object.values(perUser),
     recentLogins
   };
+}
+async function trimLogins() {
+  const cnt = await loginsCol.countDocuments();
+  if (cnt > 500) {
+    const oldest = await loginsCol.find({}, { projection: { _id: 1 } }).sort({ at: 1 }).limit(cnt - 500).toArray();
+    const ids = oldest.map(d => d._id);
+    await loginsCol.deleteMany({ _id: { $in: ids } });
+  }
 }
 
 // ---------------- http helpers ----------------
@@ -140,7 +154,7 @@ function readBody(req) {
 async function getAuthUser(req) {
   const m = (req.headers['authorization'] || '').match(/^Bearer\s+(.+)$/);
   if (!m) return null;
-  return getUserByToken(m[1]);
+  return await getUserByToken(m[1]);
 }
 
 // ---------------- static ----------------
@@ -170,14 +184,13 @@ const server = http.createServer(async (req, res) => {
       // 登录
       if (pathname === '/api/login' && method === 'POST') {
         const body = await readBody(req);
-        const u = db.users.find(x => x.username === body.username);
+        const u = await usersCol.findOne({ username: body.username });
         if (!u || !verifyPassword(body.password || '', u.passwordSalt, u.passwordHash)) {
           return sendJSON(res, 401, { error: '用户名或密码错误' });
         }
         const token = createSession(u.id);
-        db.logins.push({ userId: u.id, username: u.username, at: new Date().toISOString() });
-        if (db.logins.length > 500) db.logins = db.logins.slice(-500);
-        saveDB();
+        await loginsCol.insertOne({ userId: u.id, username: u.username, at: new Date().toISOString() });
+        await trimLogins();
         return sendJSON(res, 200, { token, user: publicUser(u) });
       }
 
@@ -198,78 +211,83 @@ const server = http.createServer(async (req, res) => {
 
       // ---------- 客户 ----------
       if (pathname === '/api/clients') {
+        const userMap = await allUsersMap();
         if (method === 'GET') {
-          let list = user.role === 'admin' ? db.clients : db.clients.filter(c => c.ownerId === user.id);
-          return sendJSON(res, 200, { items: list.map(attachOwner) });
+          const list = user.role === 'admin'
+            ? await clientsCol.find({}).toArray()
+            : await clientsCol.find({ ownerId: user.id }).toArray();
+          return sendJSON(res, 200, { items: list.map(c => attachOwner(c, userMap)) });
         }
         if (method === 'POST') {
           const body = await readBody(req);
           if (!cleanStr(body.name)) return sendJSON(res, 400, { error: '客户名称不能为空' });
           const rec = makeRecord('clients', body, user);
-          db.clients.push(rec);
-          saveDB();
-          return sendJSON(res, 201, { item: attachOwner(rec) });
+          await clientsCol.insertOne(rec);
+          return sendJSON(res, 201, { item: attachOwner(rec, userMap) });
         }
       }
       let m = pathname.match(/^\/api\/clients\/(.+)$/);
       if (m) {
-        const rec = db.clients.find(c => c.id === m[1]);
+        const rec = await clientsCol.findOne({ id: m[1] });
         if (!rec) return sendJSON(res, 404, { error: '记录不存在' });
         if (rec.ownerId !== user.id && user.role !== 'admin') return sendJSON(res, 403, { error: '无权限' });
         if (method === 'PUT') {
           const body = await readBody(req);
           if (!cleanStr(body.name)) return sendJSON(res, 400, { error: '客户名称不能为空' });
-          Object.assign(rec, sanitizeClient(body), { updatedAt: new Date().toISOString() });
-          saveDB();
-          return sendJSON(res, 200, { item: attachOwner(rec) });
+          const userMap = await allUsersMap();
+          const update = Object.assign(sanitizeClient(body), { updatedAt: new Date().toISOString() });
+          await clientsCol.updateOne({ id: m[1] }, { $set: update });
+          const updated = await clientsCol.findOne({ id: m[1] });
+          return sendJSON(res, 200, { item: attachOwner(updated, userMap) });
         }
         if (method === 'DELETE') {
-          db.clients = db.clients.filter(c => c.id !== m[1]);
-          db.projects.forEach(p => { if (p.clientId === m[1]) { p.clientId = ''; p.clientName = '(已删除客户)'; } });
-          saveDB();
+          await clientsCol.deleteOne({ id: m[1] });
+          await projectsCol.updateMany({ clientId: m[1] }, { $set: { clientId: '', clientName: '(已删除客户)' } });
           return sendJSON(res, 200, { ok: true });
         }
       }
 
       // ---------- 项目 ----------
       if (pathname === '/api/projects') {
+        const userMap = await allUsersMap();
         if (method === 'GET') {
-          let list = user.role === 'admin' ? db.projects : db.projects.filter(p => p.ownerId === user.id);
-          return sendJSON(res, 200, { items: list.map(attachOwner) });
+          const list = user.role === 'admin'
+            ? await projectsCol.find({}).toArray()
+            : await projectsCol.find({ ownerId: user.id }).toArray();
+          return sendJSON(res, 200, { items: list.map(p => attachOwner(p, userMap)) });
         }
         if (method === 'POST') {
           const body = await readBody(req);
           if (!cleanStr(body.name)) return sendJSON(res, 400, { error: '项目名称不能为空' });
           const rec = makeRecord('projects', body, user);
-          // 关联客户名称
           if (rec.clientId) {
-            const c = db.clients.find(x => x.id === rec.clientId);
+            const c = await clientsCol.findOne({ id: rec.clientId });
             if (c) rec.clientName = c.name;
           }
-          db.projects.push(rec);
-          saveDB();
-          return sendJSON(res, 201, { item: attachOwner(rec) });
+          await projectsCol.insertOne(rec);
+          return sendJSON(res, 201, { item: attachOwner(rec, userMap) });
         }
       }
       m = pathname.match(/^\/api\/projects\/(.+)$/);
       if (m) {
-        const rec = db.projects.find(p => p.id === m[1]);
+        const rec = await projectsCol.findOne({ id: m[1] });
         if (!rec) return sendJSON(res, 404, { error: '记录不存在' });
         if (rec.ownerId !== user.id && user.role !== 'admin') return sendJSON(res, 403, { error: '无权限' });
         if (method === 'PUT') {
           const body = await readBody(req);
           if (!cleanStr(body.name)) return sendJSON(res, 400, { error: '项目名称不能为空' });
-          Object.assign(rec, sanitizeProject(body), { updatedAt: new Date().toISOString() });
-          if (rec.clientId) {
-            const c = db.clients.find(x => x.id === rec.clientId);
-            rec.clientName = c ? c.name : rec.clientName;
+          const userMap = await allUsersMap();
+          const update = Object.assign(sanitizeProject(body), { updatedAt: new Date().toISOString() });
+          if (update.clientId) {
+            const c = await clientsCol.findOne({ id: update.clientId });
+            update.clientName = c ? c.name : update.clientName;
           }
-          saveDB();
-          return sendJSON(res, 200, { item: attachOwner(rec) });
+          await projectsCol.updateOne({ id: m[1] }, { $set: update });
+          const updated = await projectsCol.findOne({ id: m[1] });
+          return sendJSON(res, 200, { item: attachOwner(updated, userMap) });
         }
         if (method === 'DELETE') {
-          db.projects = db.projects.filter(p => p.id !== m[1]);
-          saveDB();
+          await projectsCol.deleteOne({ id: m[1] });
           return sendJSON(res, 200, { ok: true });
         }
       }
@@ -278,10 +296,11 @@ const server = http.createServer(async (req, res) => {
       if (user.role !== 'admin') return sendJSON(res, 403, { error: '需要管理员权限' });
 
       if (pathname === '/api/admin/overview' && method === 'GET') {
-        return sendJSON(res, 200, overview());
+        return sendJSON(res, 200, await overview());
       }
       if (pathname === '/api/users' && method === 'GET') {
-        return sendJSON(res, 200, { items: db.users.map(publicUser) });
+        const users = await usersCol.find({}).toArray();
+        return sendJSON(res, 200, { items: users.map(publicUser) });
       }
       if (pathname === '/api/users' && method === 'POST') {
         const body = await readBody(req);
@@ -290,11 +309,10 @@ const server = http.createServer(async (req, res) => {
         const role = body.role === 'admin' ? 'admin' : 'user';
         if (!username) return sendJSON(res, 400, { error: '用户名不能为空' });
         if (password.length < 4) return sendJSON(res, 400, { error: '密码至少 4 位' });
-        if (db.users.some(u => u.username === username)) return sendJSON(res, 400, { error: '用户名已存在' });
+        if (await usersCol.findOne({ username })) return sendJSON(res, 400, { error: '用户名已存在' });
         const { salt, hash } = hashPassword(password);
         const nu = { id: genId('u'), username, passwordHash: hash, passwordSalt: salt, role, createdAt: new Date().toISOString() };
-        db.users.push(nu);
-        saveDB();
+        await usersCol.insertOne(nu);
         return sendJSON(res, 201, { user: publicUser(nu) });
       }
       m = pathname.match(/^\/api\/users\/(.+)\/password$/);
@@ -303,26 +321,23 @@ const server = http.createServer(async (req, res) => {
           const body = await readBody(req);
           const password = cleanStr(body.password);
           if (password.length < 4) return sendJSON(res, 400, { error: '密码至少 4 位' });
-          const u = db.users.find(x => x.id === m[1]);
+          const u = await usersCol.findOne({ id: m[1] });
           if (!u) return sendJSON(res, 404, { error: '用户不存在' });
           const { salt, hash } = hashPassword(password);
-          u.passwordSalt = salt; u.passwordHash = hash;
-          saveDB();
+          await usersCol.updateOne({ id: m[1] }, { $set: { passwordSalt: salt, passwordHash: hash } });
           return sendJSON(res, 200, { ok: true });
         }
       }
       m = pathname.match(/^\/api\/users\/(.+)$/);
       if (m) {
         if (method === 'DELETE') {
-          const u = db.users.find(x => x.id === m[1]);
+          const u = await usersCol.findOne({ id: m[1] });
           if (!u) return sendJSON(res, 404, { error: '用户不存在' });
           if (u.id === user.id) return sendJSON(res, 400, { error: '不能删除自己的账号' });
-          db.users = db.users.filter(x => x.id !== m[1]);
-          db.clients = db.clients.filter(c => c.ownerId !== m[1]);
-          db.projects = db.projects.filter(p => p.ownerId !== m[1]);
-          // 清理该用户会话
+          await usersCol.deleteOne({ id: m[1] });
+          await clientsCol.deleteMany({ ownerId: m[1] });
+          await projectsCol.deleteMany({ ownerId: m[1] });
           for (const [t, s] of sessions) if (s.userId === m[1]) sessions.delete(t);
-          saveDB();
           return sendJSON(res, 200, { ok: true });
         }
       }
@@ -330,7 +345,6 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 404, { error: '接口不存在' });
     }
 
-    // 静态资源
     return serveStatic(pathname, res);
   } catch (err) {
     console.error('请求处理出错:', err);
@@ -338,7 +352,11 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-loadDB();
-server.listen(PORT, '0.0.0.0', () => {
-  console.log('✅ 海外项目跟进指南 已启动: http://localhost:' + PORT);
+connectDB().then(() => {
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log('✅ 海外项目跟进指南 已启动: http://localhost:' + PORT);
+  });
+}).catch(err => {
+  console.error('❌ 数据库连接失败，应用已退出:', err.message);
+  process.exit(1);
 });
