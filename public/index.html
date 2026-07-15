@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>海外项目跟进指南</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- 登录视图 -->
+<div id="login-view" class="login-view">
+  <div class="login-card">
+    <div class="login-logo">🌏</div>
+    <h1>海外项目跟进指南</h1>
+    <p class="login-sub">客户追踪 · 项目跟进</p>
+    <form id="login-form">
+      <label>用户名</label>
+      <input id="login-username" type="text" autocomplete="username" placeholder="请输入用户名" required>
+      <label>密码</label>
+      <input id="login-password" type="password" autocomplete="current-password" placeholder="请输入密码" required>
+      <div id="login-error" class="form-error"></div>
+      <button type="submit" class="btn btn-primary btn-block">登 录</button>
+    </form>
+    <p class="login-tip">默认管理员：admin / admin123（请登录后修改）</p>
+  </div>
+</div>
+
+<!-- 主应用视图 -->
+<div id="app-view" class="app-view hidden">
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="brand">🌏 海外项目跟进指南</span>
+    </div>
+    <div class="topbar-right">
+      <span id="user-info" class="user-info"></span>
+      <button id="logout-btn" class="btn btn-ghost">退出登录</button>
+    </div>
+  </header>
+
+  <nav id="tabbar" class="tabbar"></nav>
+
+  <main id="content" class="content"></main>
+</div>
+
+<!-- 弹窗容器 -->
+<div id="modal-root"></div>
+
+<!-- 提示 -->
+<div id="toast" class="toast hidden"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
