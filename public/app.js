@@ -31,6 +31,24 @@ function toast(msg, type) {
   clearTimeout(toast._t);
   toast._t = setTimeout(() => el.classList.add('hidden'), 2600);
 }
+// 导出数据：用 fetch 带鉴权拿 CSV，再以 Blob 触发下载（Excel/WPS 可直接打开）
+async function exportData(type) {
+  try {
+    const res = await fetch('/api/export?type=' + type, { headers: { 'Authorization': 'Bearer ' + token } });
+    if (res.status === 401) { logout(); throw new Error('登录已失效，请重新登录'); }
+    if (!res.ok) throw new Error('导出失败');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (type === 'projects' ? '项目跟进导出' : '客户追踪导出') + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast('已开始下载', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+}
 function statusTag(v) { return v ? `<span class="tag-status s-${escapeHtml(v)}">${escapeHtml(v)}</span>` : '<span class="tag-status">—</span>'; }
 
 // ===================== 登录 =====================
@@ -131,6 +149,7 @@ function renderClients() {
           ${CLIENT_STATUS.map(s => `<option value="${s}">${s}</option>`).join('')}
         </select>
         <button class="btn btn-primary" id="add-btn">+ 新增客户</button>
+        <button class="btn" id="export-clients-btn">⬇ 导出</button>
       </div>
     </div>
     <div class="table-wrap">
@@ -164,6 +183,7 @@ function renderClients() {
   document.getElementById('search').addEventListener('input', renderClients);
   document.getElementById('statusFilter').addEventListener('change', renderClients);
   document.getElementById('add-btn').addEventListener('click', () => openClientModal(null));
+  document.getElementById('export-clients-btn').addEventListener('click', () => exportData('clients'));
   content.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => {
     openClientModal(state.clients.find(c => c.id === b.dataset.edit));
   }));
@@ -249,6 +269,7 @@ function renderProjects() {
           ${PROJECT_STATUS.map(s => `<option value="${s}">${s}</option>`).join('')}
         </select>
         <button class="btn btn-primary" id="add-btn">+ 新增项目</button>
+        <button class="btn" id="export-projects-btn">⬇ 导出</button>
       </div>
     </div>
     <div class="table-wrap">
@@ -281,6 +302,7 @@ function renderProjects() {
   document.getElementById('search').addEventListener('input', renderProjects);
   document.getElementById('statusFilter').addEventListener('change', renderProjects);
   document.getElementById('add-btn').addEventListener('click', () => openProjectModal(null));
+  document.getElementById('export-projects-btn').addEventListener('click', () => exportData('projects'));
   content.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => {
     openProjectModal(state.projects.find(p => p.id === b.dataset.edit));
   }));

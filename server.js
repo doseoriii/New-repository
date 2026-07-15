@@ -152,6 +152,12 @@ function readBody(req) {
     req.on('error', reject);
   });
 }
+// CSV 单元格转义（处理逗号、引号、换行）
+function csvCell(v) {
+  const s = (v === null || v === undefined) ? '' : String(v);
+  if (/[",\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
 async function getAuthUser(req) {
   const m = (req.headers['authorization'] || '').match(/^Bearer\s+(.+)$/);
   if (!m) return null;
@@ -294,6 +300,44 @@ const server = http.createServer(async (req, res) => {
           await projectsCol.deleteOne({ id: m[1] });
           return sendJSON(res, 200, { ok: true });
         }
+      }
+
+      // ---------- 导出（CSV，Excel/WPS 可直接打开，中文带 BOM 不乱码）----------
+      if (pathname === '/api/export' && method === 'GET') {
+        const type = parsed.searchParams.get('type') || 'clients';
+        const userMap = await allUsersMap();
+        let headers, rows, filename;
+        if (type === 'projects') {
+          const list = user.role === 'admin'
+            ? await projectsCol.find({}).toArray()
+            : await projectsCol.find({ ownerId: user.id }).toArray();
+          headers = ['项目名称', '客户', '阶段', '金额', '进度', '优先级', '状态', '预计关闭日期', '负责人', '备注'];
+          rows = list.map(p => [
+            p.name, p.clientName, p.stage, p.amount, p.progress, p.priority, p.status,
+            p.expectedClose, (userMap.get(p.ownerId) || {}).username || '', p.notes
+          ]);
+          filename = '项目跟进导出';
+        } else {
+          const list = user.role === 'admin'
+            ? await clientsCol.find({}).toArray()
+            : await clientsCol.find({ ownerId: user.id }).toArray();
+          const projCounts = {};
+          (await projectsCol.find({}).toArray()).forEach(p => { if (p.clientId) projCounts[p.clientId] = (projCounts[p.clientId] || 0) + 1; });
+          headers = ['客户名称', '公司', '联系人', '国家', '邮箱', '电话', '来源', '状态', '最近联系日期', '项目数', '负责人', '备注'];
+          rows = list.map(c => [
+            c.name, c.company, c.contact, c.country, c.email, c.phone, c.source, c.status,
+            c.lastContactDate || '', projCounts[c.id] || 0,
+            (userMap.get(c.ownerId) || {}).username || '', c.notes
+          ]);
+          filename = '客户追踪导出';
+        }
+        const csv = [headers, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n');
+        res.writeHead(200, {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': 'attachment; filename="' + encodeURIComponent(filename) + '.csv"'
+        });
+        res.end('﻿' + csv);
+        return;
       }
 
       // ---------- 管理员 ----------
