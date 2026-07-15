@@ -144,15 +144,15 @@ function renderClients() {
             const rel = relatedProjectsOf(c);
             return `
             <tr>
-              <td>${escapeHtml(c.name)}</td>
-              <td>${escapeHtml(c.company)}</td>
-              <td>${escapeHtml(c.contact)}</td>
-              <td>${escapeHtml(c.country)}</td>
-              <td>${statusTag(c.status)}</td>
-              <td>${escapeHtml(c.lastContactDate || '—')}</td>
-              ${isAdmin ? `<td>${escapeHtml(c.ownerName)}</td>` : ''}
-              <td><span class="badge ${rel.length ? 'badge-primary' : 'badge-ghost'}" title="${rel.map(p => p.name).join('、')}">${rel.length}</span></td>
-              <td><div class="actions">
+              <td data-label="客户名称">${escapeHtml(c.name)}</td>
+              <td data-label="公司">${escapeHtml(c.company)}</td>
+              <td data-label="联系人">${escapeHtml(c.contact)}</td>
+              <td data-label="国家/地区">${escapeHtml(c.country)}</td>
+              <td data-label="跟进状态">${statusTag(c.status)}</td>
+              <td data-label="最近联系">${escapeHtml(c.lastContactDate || '—')}</td>
+              ${isAdmin ? `<td data-label="登记人">${escapeHtml(c.ownerName)}</td>` : ''}
+              <td data-label="项目数"><span class="badge ${rel.length ? 'badge-primary' : 'badge-ghost'}" title="${rel.map(p => p.name).join('、')}">${rel.length}</span></td>
+              <td data-label="操作"><div class="actions">
                 <button class="btn btn-sm" data-edit="${c.id}">编辑</button>
                 <button class="btn btn-sm btn-danger" data-del="${c.id}">删除</button>
               </div></td>
@@ -261,16 +261,16 @@ function renderProjects() {
         <tbody>
           ${list.length ? list.map(p => `
             <tr>
-              <td>${escapeHtml(p.name)}</td>
-              <td>${escapeHtml(p.clientName)}</td>
-              <td>${escapeHtml(p.stage)}</td>
-              <td>${escapeHtml(p.amount)}</td>
-              <td><span class="progress-bar"><span class="progress-fill" style="width:${Math.min(100, parseInt(p.progress) || 0)}%"></span></span><span class="progress-text">${escapeHtml(p.progress)}%</span></td>
-              <td class="p-${escapeHtml(p.priority)}">${escapeHtml(p.priority)}</td>
-              <td>${statusTag(p.status)}</td>
-              <td>${escapeHtml(p.expectedClose)}</td>
-              ${isAdmin ? `<td>${escapeHtml(p.ownerName)}</td>` : ''}
-              <td><div class="actions">
+              <td data-label="项目名称">${escapeHtml(p.name)}</td>
+              <td data-label="关联客户">${escapeHtml(p.clientName)}</td>
+              <td data-label="阶段">${escapeHtml(p.stage)}</td>
+              <td data-label="金额">${escapeHtml(p.amount)}</td>
+              <td data-label="进度"><span class="progress-bar"><span class="progress-fill" style="width:${Math.min(100, parseInt(p.progress) || 0)}%"></span></span><span class="progress-text">${escapeHtml(p.progress)}%</span></td>
+              <td data-label="优先级" class="p-${escapeHtml(p.priority)}">${escapeHtml(p.priority)}</td>
+              <td data-label="状态">${statusTag(p.status)}</td>
+              <td data-label="预计成交">${escapeHtml(p.expectedClose)}</td>
+              ${isAdmin ? `<td data-label="登记人">${escapeHtml(p.ownerName)}</td>` : ''}
+              <td data-label="操作"><div class="actions">
                 <button class="btn btn-sm" data-edit="${p.id}">编辑</button>
                 <button class="btn btn-sm btn-danger" data-del="${p.id}">删除</button>
               </div></td>
@@ -360,9 +360,9 @@ function renderAdmin() {
     <div class="table-wrap" style="margin-bottom:22px">
       <table><thead><tr><th>用户名</th><th>角色</th><th>客户数</th><th>项目数</th></tr></thead>
       <tbody>${ov.perUser.map(u => `<tr>
-        <td>${escapeHtml(u.username)}</td>
-        <td>${u.role === 'admin' ? '<span class="badge badge-admin">总管理员</span>' : '<span class="badge badge-user">成员</span>'}</td>
-        <td>${u.clients}</td><td>${u.projects}</td>
+        <td data-label="用户名">${escapeHtml(u.username)}</td>
+        <td data-label="角色">${u.role === 'admin' ? '<span class="badge badge-admin">总管理员</span>' : '<span class="badge badge-user">成员</span>'}</td>
+        <td data-label="客户数">${u.clients}</td><td data-label="项目数">${u.projects}</td>
       </tr>`).join('')}</tbody></table>
     </div>
 
@@ -373,10 +373,10 @@ function renderAdmin() {
     <div class="table-wrap" style="margin-bottom:22px">
       <table><thead><tr><th>用户名</th><th>角色</th><th>创建时间</th><th>操作</th></tr></thead>
       <tbody>${state.users.map(u => `<tr>
-        <td>${escapeHtml(u.username)}</td>
-        <td>${u.role === 'admin' ? '<span class="badge badge-admin">总管理员</span>' : '<span class="badge badge-user">成员</span>'}</td>
-        <td>${escapeHtml((u.createdAt || '').slice(0, 10))}</td>
-        <td><div class="actions">
+        <td data-label="用户名">${escapeHtml(u.username)}</td>
+        <td data-label="角色">${u.role === 'admin' ? '<span class="badge badge-admin">总管理员</span>' : '<span class="badge badge-user">成员</span>'}</td>
+        <td data-label="创建时间">${escapeHtml((u.createdAt || '').slice(0, 10))}</td>
+        <td data-label="操作"><div class="actions">
           <button class="btn btn-sm" data-pw="${u.id}">改密码</button>
           ${u.id !== currentUser.id ? `<button class="btn btn-sm btn-danger" data-deluser="${u.id}">删除</button>` : ''}
         </div></td>
@@ -387,7 +387,7 @@ function renderAdmin() {
     <div class="table-wrap">
       <table><thead><tr><th>用户名</th><th>登录时间</th></tr></thead>
       <tbody>${ov.recentLogins.length ? ov.recentLogins.map(l => `<tr>
-        <td>${escapeHtml(l.username)}</td><td>${escapeHtml(l.at)}</td>
+        <td data-label="用户名">${escapeHtml(l.username)}</td><td data-label="登录时间">${escapeHtml(l.at)}</td>
       </tr>`).join('') : `<tr><td colspan="2" class="empty">暂无登录记录</td></tr>`}</tbody></table>
     </div>`;
 
