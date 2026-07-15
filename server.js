@@ -314,7 +314,7 @@ const server = http.createServer(async (req, res) => {
           headers = ['项目名称', '客户', '阶段', '金额', '进度', '优先级', '状态', '预计关闭日期', '负责人', '备注'];
           rows = list.map(p => [
             p.name, p.clientName, p.stage, p.amount, p.progress, p.priority, p.status,
-            p.expectedClose, (userMap.get(p.ownerId) || {}).username || '', p.notes
+            p.expectedClose, userMap[p.ownerId] || '', p.notes
           ]);
           filename = '项目跟进导出';
         } else {
@@ -327,7 +327,7 @@ const server = http.createServer(async (req, res) => {
           rows = list.map(c => [
             c.name, c.company, c.contact, c.country, c.email, c.phone, c.source, c.status,
             c.lastContactDate || '', projCounts[c.id] || 0,
-            (userMap.get(c.ownerId) || {}).username || '', c.notes
+            userMap[c.ownerId] || '', c.notes
           ]);
           filename = '客户追踪导出';
         }
