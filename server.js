@@ -142,6 +142,7 @@ function sendJSON(res, status, obj) {
 }
 function readBody(req) {
   return new Promise((resolve, reject) => {
+    req.setEncoding('utf8');
     let data = '';
     req.on('data', c => { data += c; if (data.length > 1e7) req.destroy(); });
     req.on('end', () => {
