@@ -157,6 +157,16 @@ tr:hover td { background: #fafcff; }
 .toast.ok { background: var(--ok); }
 .toast.err { background: var(--danger); }
 
+.badge-primary { background: var(--primary); color: #fff; }
+.badge-ghost { background: #eef1f6; color: var(--muted); }
+
+.client-projects { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
+.client-projects .section-title { margin-top: 0; }
+.client-projects .project-list { display: flex; flex-direction: column; gap: 8px; }
+.client-projects .project-chip { display: flex; align-items: center; gap: 10px; background: #fafbfe; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border); }
+.client-projects .project-name { font-weight: 600; flex: 1; }
+.client-projects .project-stage { color: var(--muted); font-size: 12px; }
+
 @media (max-width: 640px) {
   .form-grid { grid-template-columns: 1fr; }
   th, td { padding: 9px 10px; }

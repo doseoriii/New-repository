@@ -94,7 +94,7 @@ function cleanStr(v) {
   return typeof v === 'string' ? v.trim() : (v == null ? '' : String(v));
 }
 function sanitizeClient(body) {
-  const fields = ['name', 'company', 'contact', 'country', 'email', 'phone', 'source', 'status', 'tags', 'notes'];
+  const fields = ['name', 'company', 'contact', 'country', 'email', 'phone', 'source', 'status', 'lastContactDate', 'notes'];
   const o = {};
   for (const f of fields) o[f] = cleanStr(body[f]);
   return o;

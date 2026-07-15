@@ -99,10 +99,18 @@ function switchTab(tab) {
 async function loadClients() {
   const content = document.getElementById('content');
   content.innerHTML = `<div class="empty">加载中…</div>`;
-  const data = await api('/api/clients');
-  state.clients = data.items;
+  const [cData, pData] = await Promise.all([api('/api/clients'), api('/api/projects')]);
+  state.clients = cData.items;
+  state.projects = pData.items;
   renderClients();
 }
+function relatedProjectsOf(client) {
+  if (!client) return [];
+  return (state.projects || []).filter(p =>
+    p.clientId === client.id || (!p.clientId && p.clientName && p.clientName === client.name)
+  );
+}
+
 function renderClients() {
   const content = document.getElementById('content');
   const isAdmin = currentUser.role === 'admin';
@@ -129,23 +137,27 @@ function renderClients() {
       <table>
         <thead><tr>
           <th>客户名称</th><th>公司</th><th>联系人</th><th>国家/地区</th>
-          <th>跟进状态</th>${isAdmin ? '<th>登记人</th>' : ''}<th>备注</th><th>操作</th>
+          <th>跟进状态</th><th>最近联系</th>${isAdmin ? '<th>登记人</th>' : ''}<th>项目数</th><th>操作</th>
         </tr></thead>
         <tbody>
-          ${list.length ? list.map(c => `
+          ${list.length ? list.map(c => {
+            const rel = relatedProjectsOf(c);
+            return `
             <tr>
               <td>${escapeHtml(c.name)}</td>
               <td>${escapeHtml(c.company)}</td>
               <td>${escapeHtml(c.contact)}</td>
               <td>${escapeHtml(c.country)}</td>
               <td>${statusTag(c.status)}</td>
+              <td>${escapeHtml(c.lastContactDate || '—')}</td>
               ${isAdmin ? `<td>${escapeHtml(c.ownerName)}</td>` : ''}
-              <td class="cell-note" title="${escapeHtml(c.notes)}">${escapeHtml(c.notes)}</td>
+              <td><span class="badge ${rel.length ? 'badge-primary' : 'badge-ghost'}" title="${rel.map(p => p.name).join('、')}">${rel.length}</span></td>
               <td><div class="actions">
                 <button class="btn btn-sm" data-edit="${c.id}">编辑</button>
                 <button class="btn btn-sm btn-danger" data-del="${c.id}">删除</button>
               </div></td>
-            </tr>`).join('') : `<tr><td colspan="${isAdmin ? 8 : 7}" class="empty">暂无客户，点击「新增客户」开始登记</td></tr>`}
+            </tr>`;
+          }).join('') : `<tr><td colspan="${isAdmin ? 9 : 8}" class="empty">暂无客户，点击「新增客户」开始登记</td></tr>`}
         </tbody>
       </table>
     </div>`;
@@ -165,6 +177,10 @@ function renderClients() {
 function openClientModal(rec) {
   const isEdit = !!rec;
   const v = rec || {};
+  const rel = relatedProjectsOf(v);
+  const relatedHtml = rel.length
+    ? `<div class="client-projects"><div class="section-title">目前项目（${rel.length}）</div><div class="project-list">${rel.map(p => `<div class="project-chip"><span class="project-name">${escapeHtml(p.name)}</span><span class="tag-status s-${escapeHtml(p.status)}">${escapeHtml(p.status)}</span><span class="project-stage">${escapeHtml(p.stage)}</span></div>`).join('')}</div></div>`
+    : `<div class="client-projects"><div class="section-title">目前项目</div><div class="empty">暂无关联项目</div></div>`;
   openModal(isEdit ? '编辑客户' : '新增客户', `
     <div class="form-grid">
       <div class="full"><label>客户名称 *</label><input id="f-name" value="${escapeHtml(v.name)}" placeholder="如：ABC Trading Co."></div>
@@ -177,9 +193,10 @@ function openClientModal(rec) {
       <div><label>邮箱</label><input id="f-email" value="${escapeHtml(v.email)}"></div>
       <div><label>电话</label><input id="f-phone" value="${escapeHtml(v.phone)}"></div>
       <div><label>客户来源</label><input id="f-source" value="${escapeHtml(v.source)}" placeholder="如：展会/转介绍"></div>
-      <div><label>标签</label><input id="f-tags" value="${escapeHtml(v.tags)}" placeholder="用逗号分隔"></div>
+      <div><label>最近联系日期</label><input id="f-lastContactDate" type="date" value="${escapeHtml(v.lastContactDate)}"></div>
       <div class="full"><label>备注</label><textarea id="f-notes">${escapeHtml(v.notes)}</textarea></div>
     </div>
+    ${isEdit ? relatedHtml : ''}
   `, async () => {
     const body = {
       name: document.getElementById('f-name').value,
@@ -190,7 +207,7 @@ function openClientModal(rec) {
       email: document.getElementById('f-email').value,
       phone: document.getElementById('f-phone').value,
       source: document.getElementById('f-source').value,
-      tags: document.getElementById('f-tags').value,
+      lastContactDate: document.getElementById('f-lastContactDate').value,
       notes: document.getElementById('f-notes').value
     };
     if (!body.name.trim()) { toast('客户名称不能为空', 'err'); return false; }
