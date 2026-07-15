@@ -355,7 +355,7 @@ const server = http.createServer(async (req, res) => {
 
 connectDB().then(() => {
   server.listen(PORT, '0.0.0.0', () => {
-    console.log('✅ 海外项目跟进指南 已启动: http://localhost:' + PORT);
+    console.log('✅ 海外项目跟进指南 已启动（MongoDB 版）: http://localhost:' + PORT);
   });
 }).catch(err => {
   console.error('❌ 数据库连接失败，应用已退出:', err.message);
