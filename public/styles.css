@@ -123,6 +123,15 @@ tr:hover td { background: #fafcff; }
 .progress-fill { background: var(--primary); height: 100%; }
 .progress-text { font-size: 12px; margin-left: 6px; color: var(--muted); }
 
+/* ---------- 分页 ---------- */
+.pagination {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  padding: 12px 14px; border-top: 1px solid var(--border);
+}
+.page-info { color: var(--muted); font-size: 13px; min-width: 80px; text-align: center; }
+.pagination .btn { padding: 6px 14px; }
+.pagination .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* ---------- 卡片/统计 ---------- */
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 20px; }
 .stat-card { background: #fff; border-radius: 12px; padding: 18px; box-shadow: var(--shadow); }
@@ -214,4 +223,8 @@ tr:hover td { background: #fafcff; }
   .cell-note { max-width: none; white-space: normal; }
   .progress-bar { width: 56px; }
   .actions .btn { padding: 8px 14px; font-size: 14px; }
+  /* 分页按钮手机端加大 */
+  .pagination { padding: 14px; gap: 16px; }
+  .pagination .btn { padding: 9px 18px; font-size: 14px; }
+  .page-info { font-size: 14px; }
 }

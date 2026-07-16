@@ -1,12 +1,13 @@
 // ===================== 全局状态 =====================
 let token = localStorage.getItem('token') || '';
 let currentUser = null;
-const state = { tab: 'clients', clients: [], projects: [], users: [], overview: null };
+const state = { tab: 'clients', clients: [], projects: [], users: [], overview: null, pages: { clients: 1, projects: 1, adminUsers: 1, adminLogins: 1 } };
 
 const CLIENT_STATUS = ['潜在客户', '接洽中', '样品阶段', '已成交', '已流失'];
 const PROJECT_STAGE = ['线索', '需求确认', '方案设计', '报价', '商务谈判', '合同签署', '执行中', '已完成'];
 const PROJECT_STATUS = ['进行中', '风险预警', '暂停', '已取消', '已完成'];
 const PRIORITY = ['高', '中', '低'];
+const PAGE_SIZE = 10;
 
 // ===================== 工具 =====================
 function escapeHtml(s) {
@@ -50,6 +51,26 @@ async function exportData(type) {
   } catch (e) { toast(e.message, 'err'); }
 }
 function statusTag(v) { return v ? `<span class="tag-status s-${escapeHtml(v)}">${escapeHtml(v)}</span>` : '<span class="tag-status">—</span>'; }
+
+// 分页工具：计算当前页并返回切片 + 页码信息
+function getPage(list, key, pageSize = PAGE_SIZE) {
+  const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+  let page = state.pages[key] || 1;
+  if (page > totalPages) page = totalPages;
+  if (page < 1) page = 1;
+  state.pages[key] = page;
+  const start = (page - 1) * pageSize;
+  return { page, totalPages, items: list.slice(start, start + pageSize) };
+}
+function paginationHtml(key, page, totalPages) {
+  if (totalPages <= 1) return '';
+  return `
+    <div class="pagination">
+      <button class="btn btn-sm" data-page-prev="${key}" ${page === 1 ? 'disabled' : ''}>上一页</button>
+      <span class="page-info">第 ${page} / ${totalPages} 页</span>
+      <button class="btn btn-sm" data-page-next="${key}" ${page === totalPages ? 'disabled' : ''}>下一页</button>
+    </div>`;
+}
 
 // ===================== 登录 =====================
 document.getElementById('login-form').addEventListener('submit', async (e) => {
@@ -139,14 +160,16 @@ function renderClients() {
     const matchSt = !stFilter || c.status === stFilter;
     return matchKw && matchSt;
   });
+  const { page, totalPages, items } = getPage(list, 'clients');
+
   content.innerHTML = `
     <div class="module-head">
       <div class="module-title">客户追踪</div>
       <div class="toolbar">
-        <input id="search" placeholder="搜索名称/公司/国家…" value="">
+        <input id="search" placeholder="搜索名称/公司/国家…" value="${escapeHtml(kw)}">
         <select id="statusFilter">
           <option value="">全部状态</option>
-          ${CLIENT_STATUS.map(s => `<option value="${s}">${s}</option>`).join('')}
+          ${CLIENT_STATUS.map(s => `<option value="${s}" ${stFilter === s ? 'selected' : ''}>${s}</option>`).join('')}
         </select>
         <button class="btn btn-primary" id="add-btn">+ 新增客户</button>
         <button class="btn" id="export-clients-btn">⬇ 导出</button>
@@ -159,7 +182,7 @@ function renderClients() {
           <th>跟进状态</th><th>最近联系</th>${isAdmin ? '<th>登记人</th>' : ''}<th>项目数</th><th>操作</th>
         </tr></thead>
         <tbody>
-          ${list.length ? list.map(c => {
+          ${items.length ? items.map(c => {
             const rel = relatedProjectsOf(c);
             return `
             <tr>
@@ -179,11 +202,14 @@ function renderClients() {
           }).join('') : `<tr><td colspan="${isAdmin ? 9 : 8}" class="empty">暂无客户，点击「新增客户」开始登记</td></tr>`}
         </tbody>
       </table>
+      ${paginationHtml('clients', page, totalPages)}
     </div>`;
-  document.getElementById('search').addEventListener('input', renderClients);
-  document.getElementById('statusFilter').addEventListener('change', renderClients);
+  document.getElementById('search').addEventListener('input', () => { state.pages.clients = 1; renderClients(); });
+  document.getElementById('statusFilter').addEventListener('change', () => { state.pages.clients = 1; renderClients(); });
   document.getElementById('add-btn').addEventListener('click', () => openClientModal(null));
   document.getElementById('export-clients-btn').addEventListener('click', () => exportData('clients'));
+  content.querySelector('[data-page-prev="clients"]')?.addEventListener('click', () => { state.pages.clients--; renderClients(); });
+  content.querySelector('[data-page-next="clients"]')?.addEventListener('click', () => { state.pages.clients++; renderClients(); });
   content.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => {
     openClientModal(state.clients.find(c => c.id === b.dataset.edit));
   }));
@@ -259,14 +285,16 @@ function renderProjects() {
     const matchSt = !stFilter || p.status === stFilter;
     return matchKw && matchSt;
   });
+  const { page, totalPages, items } = getPage(list, 'projects');
+
   content.innerHTML = `
     <div class="module-head">
       <div class="module-title">项目跟进</div>
       <div class="toolbar">
-        <input id="search" placeholder="搜索项目/客户…" value="">
+        <input id="search" placeholder="搜索项目/客户…" value="${escapeHtml(kw)}">
         <select id="statusFilter">
           <option value="">全部状态</option>
-          ${PROJECT_STATUS.map(s => `<option value="${s}">${s}</option>`).join('')}
+          ${PROJECT_STATUS.map(s => `<option value="${s}" ${stFilter === s ? 'selected' : ''}>${s}</option>`).join('')}
         </select>
         <button class="btn btn-primary" id="add-btn">+ 新增项目</button>
         <button class="btn" id="export-projects-btn">⬇ 导出</button>
@@ -280,7 +308,7 @@ function renderProjects() {
           ${isAdmin ? '<th>登记人</th>' : ''}<th>操作</th>
         </tr></thead>
         <tbody>
-          ${list.length ? list.map(p => `
+          ${items.length ? items.map(p => `
             <tr>
               <td data-label="项目名称">${escapeHtml(p.name)}</td>
               <td data-label="关联客户">${escapeHtml(p.clientName)}</td>
@@ -298,11 +326,14 @@ function renderProjects() {
             </tr>`).join('') : `<tr><td colspan="${isAdmin ? 10 : 9}" class="empty">暂无项目，点击「新增项目」开始登记</td></tr>`}
         </tbody>
       </table>
+      ${paginationHtml('projects', page, totalPages)}
     </div>`;
-  document.getElementById('search').addEventListener('input', renderProjects);
-  document.getElementById('statusFilter').addEventListener('change', renderProjects);
+  document.getElementById('search').addEventListener('input', () => { state.pages.projects = 1; renderProjects(); });
+  document.getElementById('statusFilter').addEventListener('change', () => { state.pages.projects = 1; renderProjects(); });
   document.getElementById('add-btn').addEventListener('click', () => openProjectModal(null));
   document.getElementById('export-projects-btn').addEventListener('click', () => exportData('projects'));
+  content.querySelector('[data-page-prev="projects"]')?.addEventListener('click', () => { state.pages.projects--; renderProjects(); });
+  content.querySelector('[data-page-next="projects"]')?.addEventListener('click', () => { state.pages.projects++; renderProjects(); });
   content.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => {
     openProjectModal(state.projects.find(p => p.id === b.dataset.edit));
   }));
@@ -370,6 +401,9 @@ async function loadAdmin() {
 function renderAdmin() {
   const content = document.getElementById('content');
   const ov = state.overview;
+  const usersPage = getPage(state.users, 'adminUsers');
+  const loginsPage = getPage(ov.recentLogins, 'adminLogins');
+
   content.innerHTML = `
     <div class="module-head"><div class="module-title">管理员面板</div></div>
     <div class="stat-grid">
@@ -394,7 +428,7 @@ function renderAdmin() {
     </div>
     <div class="table-wrap" style="margin-bottom:22px">
       <table><thead><tr><th>用户名</th><th>角色</th><th>创建时间</th><th>操作</th></tr></thead>
-      <tbody>${state.users.map(u => `<tr>
+      <tbody>${usersPage.items.length ? usersPage.items.map(u => `<tr>
         <td data-label="用户名">${escapeHtml(u.username)}</td>
         <td data-label="角色">${u.role === 'admin' ? '<span class="badge badge-admin">总管理员</span>' : '<span class="badge badge-user">成员</span>'}</td>
         <td data-label="创建时间">${escapeHtml((u.createdAt || '').slice(0, 10))}</td>
@@ -402,18 +436,24 @@ function renderAdmin() {
           <button class="btn btn-sm" data-pw="${u.id}">改密码</button>
           ${u.id !== currentUser.id ? `<button class="btn btn-sm btn-danger" data-deluser="${u.id}">删除</button>` : ''}
         </div></td>
-      </tr>`).join('')}</tbody></table>
+      </tr>`).join('') : `<tr><td colspan="4" class="empty">暂无成员</td></tr>`}</tbody></table>
+      ${paginationHtml('adminUsers', usersPage.page, usersPage.totalPages)}
     </div>
 
     <div class="section-title">最近登录记录</div>
     <div class="table-wrap">
       <table><thead><tr><th>用户名</th><th>登录时间</th></tr></thead>
-      <tbody>${ov.recentLogins.length ? ov.recentLogins.map(l => `<tr>
+      <tbody>${loginsPage.items.length ? loginsPage.items.map(l => `<tr>
         <td data-label="用户名">${escapeHtml(l.username)}</td><td data-label="登录时间">${escapeHtml(l.at)}</td>
       </tr>`).join('') : `<tr><td colspan="2" class="empty">暂无登录记录</td></tr>`}</tbody></table>
+      ${paginationHtml('adminLogins', loginsPage.page, loginsPage.totalPages)}
     </div>`;
 
   document.getElementById('add-user-btn').addEventListener('click', openAddUserModal);
+  content.querySelector('[data-page-prev="adminUsers"]')?.addEventListener('click', () => { state.pages.adminUsers--; renderAdmin(); });
+  content.querySelector('[data-page-next="adminUsers"]')?.addEventListener('click', () => { state.pages.adminUsers++; renderAdmin(); });
+  content.querySelector('[data-page-prev="adminLogins"]')?.addEventListener('click', () => { state.pages.adminLogins--; renderAdmin(); });
+  content.querySelector('[data-page-next="adminLogins"]')?.addEventListener('click', () => { state.pages.adminLogins++; renderAdmin(); });
   content.querySelectorAll('[data-pw]').forEach(b => b.addEventListener('click', () => openPasswordModal(b.dataset.pw)));
   content.querySelectorAll('[data-deluser]').forEach(b => b.addEventListener('click', async () => {
     if (!confirm('确定删除该成员？其登记的所有客户与项目也会一并删除。')) return;
